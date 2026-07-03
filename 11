@@ -1,0 +1,178 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart"
+local MaxDistance = 300
+local CameraOffset = Vector3.new(0, 0.3, 0)
+
+-- ===== CÀI ĐẶT CROSSHAIR =====
+local CrosshairSize = 60
+local LineThickness = 2
+local CenterDotSize = 6
+local Color = Color3.fromRGB(255, 255, 255)
+-- =============================
+
+-- Tạo GUI
+local ScreenGui = Instance.new("ScreenGui", (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "Aimlock"
+ScreenGui.ResetOnSpawn = false
+
+-- Crosshair container
+local CrosshairContainer = Instance.new("Frame", ScreenGui)
+CrosshairContainer.BackgroundTransparency = 1
+CrosshairContainer.Size = UDim2.new(0, CrosshairSize*2, 0, CrosshairSize*2)
+CrosshairContainer.Position = UDim2.new(0.5, -CrosshairSize, 0.5, -CrosshairSize)
+CrosshairContainer.Visible = false
+
+local function createLine(parent, x, y, width, height, color)
+    local line = Instance.new("Frame", parent)
+    line.BackgroundColor3 = color
+    line.BackgroundTransparency = 0
+    line.Size = UDim2.new(0, width, 0, height)
+    line.Position = UDim2.new(0, x, 0, y)
+    return line
+end
+
+local topLine = createLine(CrosshairContainer, CrosshairSize - LineThickness/2, 0, LineThickness, CrosshairSize - CenterDotSize/2, Color)
+local bottomLine = createLine(CrosshairContainer, CrosshairSize - LineThickness/2, CrosshairSize + CenterDotSize/2, LineThickness, CrosshairSize - CenterDotSize/2, Color)
+local leftLine = createLine(CrosshairContainer, 0, CrosshairSize - LineThickness/2, CrosshairSize - CenterDotSize/2, LineThickness, Color)
+local rightLine = createLine(CrosshairContainer, CrosshairSize + CenterDotSize/2, CrosshairSize - LineThickness/2, CrosshairSize - CenterDotSize/2, LineThickness, Color)
+
+local centerDot = Instance.new("Frame", CrosshairContainer)
+centerDot.BackgroundColor3 = Color
+centerDot.BackgroundTransparency = 0
+centerDot.Size = UDim2.new(0, CenterDotSize, 0, CenterDotSize)
+centerDot.Position = UDim2.new(0, CrosshairSize - CenterDotSize/2, 0, CrosshairSize - CenterDotSize/2)
+Instance.new("UICorner", centerDot).CornerRadius = UDim.new(1, 0)
+
+-- Nút bật/tắt
+local ToggleButton = Instance.new("ImageButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 79, 0, 79)
+ToggleButton.Position = UDim2.new(0.8, 0, 0.4, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleButton.BackgroundTransparency = 0.5
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
+local UIStroke = Instance.new("UIStroke", ToggleButton)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.2
+UIStroke.Transparency = 0.6
+
+local LockIcon = Instance.new("ImageLabel", ToggleButton)
+LockIcon.Size = UDim2.new(0, 45, 0, 45)
+LockIcon.Position = UDim2.new(0.5, -22.5, 0.5, -22.5)
+LockIcon.BackgroundTransparency = 1
+LockIcon.Image = "rbxassetid://237305954"
+LockIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Lưu loại camera gốc
+local originalCameraType = Camera.CameraType
+
+-- Hàm tìm mục tiêu
+local function getClosestTarget()
+    local closestTarget = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+
+    local FOVRadius = 9999 -- không giới hạn FOV (để cứng hơn)
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= myChar and obj:FindFirstChild(AimPart) then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 and not obj:IsA("Accessory") then
+                if Players:GetPlayerFromCharacter(obj) == LocalPlayer then continue end
+                local dist = (myChar.HumanoidRootPart.Position - obj[AimPart].Position).Magnitude
+                if dist < MaxDistance then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(obj[AimPart].Position)
+                    if onScreen then
+                        local d2 = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                        if d2 < FOVRadius and d2 < shortestDistance then 
+                            shortestDistance = d2 
+                            closestTarget = obj 
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestTarget
+end
+
+-- ===== CHÍNH: AIMLOCK CỨNG NHẤT =====
+RunService:BindToRenderStep("HiruzHardLock", Enum.RenderPriority.Camera.Value + 1, function()
+    if AimlockEnabled and CurrentTarget and CurrentTarget:FindFirstChild(AimPart) then
+        -- Khóa camera ở chế độ scriptable (không bị game can thiệp)
+        if Camera.CameraType ~= Enum.CameraType.Scriptable then
+            Camera.CameraType = Enum.CameraType.Scriptable
+        end
+
+        local targetPos = CurrentTarget[AimPart].Position
+        local character = LocalPlayer.Character
+        if character then
+            -- Lấy vị trí mắt hoặc ngực
+            local head = character:FindFirstChild("Head")
+            local basePos = head and head.Position or (character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart.Position + Vector3.new(0, 1.5, 0)) or Camera.CFrame.Position
+            local camPos = basePos + CameraOffset
+
+            -- Gán CFrame mới liên tục, không có độ trễ
+            Camera.CFrame = CFrame.new(camPos, targetPos)
+
+            -- Cập nhật crosshair
+            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+            if onScreen then
+                CrosshairContainer.Visible = true
+                CrosshairContainer.Position = UDim2.new(0, screenPos.X - CrosshairSize, 0, screenPos.Y - CrosshairSize)
+            else
+                CrosshairContainer.Visible = false
+            end
+        end
+    else
+        -- Khi tắt aim, khôi phục camera cũ
+        if Camera.CameraType ~= originalCameraType then
+            Camera.CameraType = originalCameraType
+        end
+        CrosshairContainer.Visible = false
+    end
+end)
+
+-- Bật/tắt
+ToggleButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    if AimlockEnabled then
+        CurrentTarget = getClosestTarget()
+        if not CurrentTarget then 
+            AimlockEnabled = false
+            CrosshairContainer.Visible = false
+        end
+    else
+        CurrentTarget = nil
+        CrosshairContainer.Visible = false
+        -- Khôi phục camera gốc
+        if Camera.CameraType ~= originalCameraType then
+            Camera.CameraType = originalCameraType
+        end
+    end
+end)
+
+-- Tự động tìm mục tiêu mới nếu target chết hoặc mất
+game:GetService("RunService").Heartbeat:Connect(function()
+    if AimlockEnabled and CurrentTarget then
+        local humanoid = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 or not CurrentTarget.Parent then
+            CurrentTarget = getClosestTarget()
+            if not CurrentTarget then
+                AimlockEnabled = false
+                CrosshairContainer.Visible = false
+                if Camera.CameraType ~= originalCameraType then
+                    Camera.CameraType = originalCameraType
+                end
+            end
+        end
+    end
+end)
