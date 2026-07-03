@@ -1,0 +1,164 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart"
+local MaxDistance = 300
+
+-- ===== 1. TẠO GUI NÚT BẤM (Gọn gàng, hơi vuông) =====
+local ScreenGui = Instance.new("ScreenGui", (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "HiruzAimlockV20"
+ScreenGui.ResetOnSpawn = false
+
+local ToggleButton = Instance.new("TextButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 80, 0, 60)
+ToggleButton.Position = UDim2.new(0.8, 0, 0.4, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ToggleButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 13
+ToggleButton.Text = "AIM\nOFF"
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+local UICorner = Instance.new("UICorner", ToggleButton)
+UICorner.CornerRadius = UDim.new(0, 8)
+
+local UIStroke = Instance.new("UIStroke", ToggleButton)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.5
+
+-- ===== 2. TẠO CROSSHAIR DÍNH LÊN NGƯỜI (Màu Trắng Xanh) =====
+local CrosshairColor = Color3.fromRGB(0, 255, 255)
+local TargetGui = Instance.new("BillboardGui")
+TargetGui.Name = "AimlockCrosshair"
+TargetGui.AlwaysOnTop = true
+TargetGui.Size = UDim2.new(0, 60, 0, 60) 
+TargetGui.LightInfluence = 0
+
+local Container = Instance.new("Frame", TargetGui)
+Container.Size = UDim2.new(1, 0, 1, 0)
+Container.BackgroundTransparency = 1
+
+local function makeLine(length, thick, pos, rot)
+    local line = Instance.new("Frame", Container)
+    line.BackgroundColor3 = CrosshairColor
+    line.BorderSizePixel = 0
+    line.Size = UDim2.new(0, length, 0, thick)
+    line.Position = pos
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.Rotation = rot
+end
+
+makeLine(20, 2, UDim2.new(0.2, 0, 0.2, 0), -45) 
+makeLine(20, 2, UDim2.new(0.8, 0, 0.2, 0), 45)  
+makeLine(20, 2, UDim2.new(0.2, 0, 0.8, 0), 45)  
+makeLine(20, 2, UDim2.new(0.8, 0, 0.8, 0), -45) 
+
+local dot = Instance.new("Frame", Container)
+dot.BackgroundColor3 = CrosshairColor
+dot.Size = UDim2.new(0, 6, 0, 6)
+dot.Position = UDim2.new(0.5, 0, 0.5, 0)
+dot.AnchorPoint = Vector2.new(0.5, 0.5)
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+-- ===== 3. HÀM TÌM MỤC TIÊU (HỖ TRỢ CẢ PLAYER VÀ NPC) =====
+local function getClosestTarget()
+    local closestTarget = nil
+    local shortestDistance = math.huge
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+
+    local viewportCenter = Camera.ViewportSize / 2
+    local rootPos = char.HumanoidRootPart.Position
+
+    -- Quét toàn bộ Workspace để bắt cả NPC và Người chơi
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= char then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local targetRoot = obj:FindFirstChild(AimPart)
+            
+            -- Nếu là một thực thể sống (máu > 0) và không có khiên bất tử
+            if hum and hum.Health > 0 and targetRoot and not obj:FindFirstChildOfClass("ForceField") then
+                local distToTarget = (rootPos - targetRoot.Position).Magnitude
+                
+                if distToTarget < MaxDistance then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(targetRoot.Position)
+                    if onScreen then
+                        local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+                        if screenDist < shortestDistance then
+                            shortestDistance = screenDist
+                            closestTarget = obj
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestTarget
+end
+
+-- ===== 4. KHÓA CAMERA VÀ TỰ ĐỘNG ĐỔI MỤC TIÊU =====
+RunService:BindToRenderStep("HiruzHardLock", Enum.RenderPriority.Camera.Value + 200, function()
+    if not AimlockEnabled then
+        TargetGui.Parent = nil
+        return
+    end
+
+    -- Kiểm tra xem mục tiêu hiện tại còn hợp lệ không (chết, mất tích, quá xa)
+    local needNewTarget = false
+    if not CurrentTarget or not CurrentTarget.Parent then
+        needNewTarget = true
+    else
+        local hum = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        local root = CurrentTarget:FindFirstChild(AimPart)
+        if not hum or hum.Health <= 0 or not root then
+            needNewTarget = true
+        end
+    end
+
+    -- Nếu cần mục tiêu mới (do đứa cũ dẹo hoặc mới bật Aim), lập tức tìm đứa mới
+    if needNewTarget then
+        CurrentTarget = getClosestTarget()
+    end
+
+    -- Tiến hành khóa cứng mục tiêu
+    if CurrentTarget and CurrentTarget:FindFirstChild(AimPart) then
+        local targetRoot = CurrentTarget[AimPart]
+        
+        -- Dán crosshair lên ngực/đầu
+        if TargetGui.Parent ~= targetRoot then
+            TargetGui.Parent = targetRoot
+        end
+        
+        -- ÉP GÓC NHÌN TUYỆT ĐỐI (KHÔNG LỎNG LẺO)
+        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetRoot.Position)
+        
+        -- Chỉnh UI hiển thị đang dính mục tiêu
+        ToggleButton.Text = "AIM\nON"
+        ToggleButton.TextColor3 = CrosshairColor
+        UIStroke.Color = CrosshairColor
+    else
+        -- Bật Aim rồi nhưng không thấy ai xung quanh
+        TargetGui.Parent = nil
+        ToggleButton.Text = "SCANNING"
+        ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 50) -- Màu vàng rà soát
+        UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+-- ===== 5. SỰ KIỆN NÚT BẤM BẬT/TẮT =====
+ToggleButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    if not AimlockEnabled then
+        CurrentTarget = nil
+        TargetGui.Parent = nil
+        ToggleButton.Text = "AIM\nOFF"
+        ToggleButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+        UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    end
+end)
