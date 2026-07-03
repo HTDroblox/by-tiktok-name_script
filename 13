@@ -1,0 +1,218 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart"
+local MaxDistance = 300
+
+-- ===== GÓC NHÌN THỨ 3 =====
+local CameraOffset = Vector3.new(0, 2, 5)
+
+-- ===== CROSSHAIR HÌNH X (TÁCH RỜI) =====
+local CrosshairColor = Color3.fromRGB(255, 255, 255)
+local LineThickness = 2.5
+local BaseLineLength = 40
+local BaseDotSize = 8
+local MinScale = 0.3
+local MaxScale = 3.5
+local ScaleFactor = 120
+-- ==========================================
+
+-- Tạo GUI
+local ScreenGui = Instance.new("ScreenGui", (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "HiruzAimlockV17"
+ScreenGui.ResetOnSpawn = false
+
+-- CONTAINER CROSSHAIR
+local CrossContainer = Instance.new("Frame", ScreenGui)
+CrossContainer.BackgroundTransparency = 1
+CrossContainer.Size = UDim2.new(0, 0, 0, 0)
+CrossContainer.Position = UDim2.new(0, 0, 0, 0)
+CrossContainer.Visible = false
+CrossContainer.AnchorPoint = Vector2.new(0.5, 0.5)
+
+-- Hàm tạo đường thẳng với khoảng cách từ tâm
+local function makeLine(parent, length, thick, rot, offsetX, offsetY, color)
+    local line = Instance.new("Frame", parent)
+    line.BackgroundColor3 = color
+    line.BackgroundTransparency = 0
+    line.Size = UDim2.new(0, length, 0, thick)
+    line.Position = UDim2.new(0, -length/2 + offsetX, 0, -thick/2 + offsetY)
+    line.Rotation = rot
+    return line
+end
+
+-- ===== TẠO HÌNH X (4 ĐƯỜNG CHÉO TÁCH RỜI) =====
+local gap = 10 -- khoảng cách tách ra từ tâm
+
+-- Góc trên-trái: \
+local lineTL = makeLine(CrossContainer, BaseLineLength, LineThickness, -45, -gap, -gap, CrosshairColor)
+
+-- Góc trên-phải: /
+local lineTR = makeLine(CrossContainer, BaseLineLength, LineThickness, 45, gap, -gap, CrosshairColor)
+
+-- Góc dưới-trái: /
+local lineBL = makeLine(CrossContainer, BaseLineLength, LineThickness, 45, -gap, gap, CrosshairColor)
+
+-- Góc dưới-phải: \
+local lineBR = makeLine(CrossContainer, BaseLineLength, LineThickness, -45, gap, gap, CrosshairColor)
+
+-- Chấm tròn ở giữa
+local dot = Instance.new("Frame", CrossContainer)
+dot.BackgroundColor3 = CrosshairColor
+dot.BackgroundTransparency = 0
+dot.Size = UDim2.new(0, BaseDotSize, 0, BaseDotSize)
+dot.Position = UDim2.new(0, -BaseDotSize/2, 0, -BaseDotSize/2)
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+-- Cập nhật crosshair khi scale
+local function updateCrosshair(scale)
+    local len = BaseLineLength * scale
+    local dotSize = BaseDotSize * scale
+    local thick = LineThickness * scale
+    local gapScaled = gap * scale
+
+    -- Cập nhật từng đường
+    lineTL.Size = UDim2.new(0, len, 0, thick)
+    lineTL.Position = UDim2.new(0, -len/2 - gapScaled, 0, -thick/2 - gapScaled)
+
+    lineTR.Size = UDim2.new(0, len, 0, thick)
+    lineTR.Position = UDim2.new(0, gapScaled, 0, -thick/2 - gapScaled)
+
+    lineBL.Size = UDim2.new(0, len, 0, thick)
+    lineBL.Position = UDim2.new(0, -len/2 - gapScaled, 0, gapScaled)
+
+    lineBR.Size = UDim2.new(0, len, 0, thick)
+    lineBR.Position = UDim2.new(0, gapScaled, 0, gapScaled)
+
+    dot.Size = UDim2.new(0, dotSize, 0, dotSize)
+    dot.Position = UDim2.new(0, -dotSize/2, 0, -dotSize/2)
+end
+
+-- NÚT BẬT/TẮT
+local ToggleButton = Instance.new("ImageButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 79, 0, 79)
+ToggleButton.Position = UDim2.new(0.8, 0, 0.4, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleButton.BackgroundTransparency = 0.5
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
+local UIStroke = Instance.new("UIStroke", ToggleButton)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.2
+UIStroke.Transparency = 0.6
+
+local LockIcon = Instance.new("ImageLabel", ToggleButton)
+LockIcon.Size = UDim2.new(0, 45, 0, 45)
+LockIcon.Position = UDim2.new(0.5, -22.5, 0.5, -22.5)
+LockIcon.BackgroundTransparency = 1
+LockIcon.Image = "rbxassetid://237305954"
+LockIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Lưu camera gốc
+local originalCameraType = Camera.CameraType
+
+-- Tìm mục tiêu gần nhất
+local function getClosestTarget()
+    local closest = nil
+    local minDist = math.huge
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= char and obj:FindFirstChild(AimPart) then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and not obj:IsA("Accessory") and Players:GetPlayerFromCharacter(obj) ~= LocalPlayer then
+                local dist = (char.HumanoidRootPart.Position - obj[AimPart].Position).Magnitude
+                if dist < MaxDistance then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(obj[AimPart].Position)
+                    if onScreen then
+                        local d = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                        if d < minDist then
+                            minDist = d
+                            closest = obj
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ===== AIMLOCK + CROSSHAIR =====
+RunService:BindToRenderStep("HiruzHardLock", Enum.RenderPriority.Camera.Value + 1, function()
+    if AimlockEnabled and CurrentTarget and CurrentTarget:FindFirstChild(AimPart) then
+        if Camera.CameraType ~= Enum.CameraType.Scriptable then
+            Camera.CameraType = Enum.CameraType.Scriptable
+        end
+
+        local targetPos = CurrentTarget[AimPart].Position
+        local character = LocalPlayer.Character
+        if character then
+            local head = character:FindFirstChild("Head")
+            local root = character:FindFirstChild("HumanoidRootPart")
+            local basePos = head and head.Position or (root and root.Position + Vector3.new(0, 1.5, 0)) or Camera.CFrame.Position
+            local camPos = basePos + CameraOffset
+
+            Camera.CFrame = CFrame.new(camPos, targetPos)
+
+            local dist = (camPos - targetPos).Magnitude
+            local rawScale = ScaleFactor / dist
+            local scale = math.clamp(rawScale, MinScale, MaxScale)
+
+            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+            if onScreen then
+                CrossContainer.Visible = true
+                CrossContainer.Position = UDim2.new(0, screenPos.X, 0, screenPos.Y)
+                updateCrosshair(scale)
+            else
+                CrossContainer.Visible = false
+            end
+        end
+    else
+        CrossContainer.Visible = false
+        if Camera.CameraType ~= originalCameraType then
+            Camera.CameraType = originalCameraType
+        end
+    end
+end)
+
+-- Bấm nút bật/tắt
+ToggleButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    if AimlockEnabled then
+        CurrentTarget = getClosestTarget()
+        if not CurrentTarget then
+            AimlockEnabled = false
+            CrossContainer.Visible = false
+        end
+    else
+        CurrentTarget = nil
+        CrossContainer.Visible = false
+        if Camera.CameraType ~= originalCameraType then
+            Camera.CameraType = originalCameraType
+        end
+    end
+end)
+
+-- Tự động tìm target mới
+game:GetService("RunService").Heartbeat:Connect(function()
+    if AimlockEnabled and CurrentTarget then
+        local hum = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 or not CurrentTarget.Parent then
+            CurrentTarget = getClosestTarget()
+            if not CurrentTarget then
+                AimlockEnabled = false
+                CrossContainer.Visible = false
+                if Camera.CameraType ~= originalCameraType then
+                    Camera.CameraType = originalCameraType
+                end
+            end
+        end
+    end
+end)
