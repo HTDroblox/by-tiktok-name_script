@@ -1,0 +1,112 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart"
+local MaxDistance = 300
+local CameraOffset = Vector3.new(0, 0.3, 0)  -- Nâng camera lên 0.3
+
+-- Tạo GUI
+local ScreenGui = Instance.new("ScreenGui", (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "HiruzAimlockV17"
+ScreenGui.ResetOnSpawn = false
+
+-- Nút aim
+local ToggleButton = Instance.new("ImageButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 79, 0, 79)
+ToggleButton.Position = UDim2.new(0.8, 0, 0.4, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleButton.BackgroundTransparency = 0.5
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
+local UIStroke = Instance.new("UIStroke", ToggleButton)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.2
+UIStroke.Transparency = 0.6
+
+-- Icon lock
+local LockIcon = Instance.new("ImageLabel", ToggleButton)
+LockIcon.Size = UDim2.new(0, 45, 0, 45)
+LockIcon.Position = UDim2.new(0.5, -22.5, 0.5, -22.5)
+LockIcon.BackgroundTransparency = 1
+LockIcon.Image = "rbxassetid://131920836" 
+LockIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+
+-- Vòng ngắm động
+local DynamicFrame = Instance.new("ImageLabel", ScreenGui)
+DynamicFrame.BackgroundTransparency = 1
+DynamicFrame.Image = "rbxassetid://131920836"
+DynamicFrame.Visible = false
+DynamicFrame.Size = UDim2.new(0, 100, 0, 100)
+
+-- Hàm tìm mục tiêu
+local function getClosestTarget()
+    local closestTarget = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= myChar and obj:FindFirstChild(AimPart) then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 and not obj:IsA("Accessory") then
+                if Players:GetPlayerFromCharacter(obj) == LocalPlayer then continue end
+                local dist = (myChar.HumanoidRootPart.Position - obj[AimPart].Position).Magnitude
+                if dist < MaxDistance then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(obj[AimPart].Position)
+                    if onScreen then
+                        local d2 = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                        if d2 < shortestDistance then shortestDistance = d2; closestTarget = obj end
+                    end
+                end
+            end
+        end
+    end
+    return closestTarget
+end
+
+-- LÕI AIMLOCK (camera được nâng lên Y+0.3)
+RunService:BindToRenderStep("HiruzHardLock", 1000, function()
+    if AimlockEnabled and CurrentTarget and CurrentTarget:FindFirstChild(AimPart) then
+        local targetPos = CurrentTarget[AimPart].Position  -- Vẫn aim vào thân
+        local character = LocalPlayer.Character
+        if character then
+            -- Lấy vị trí mắt hoặc ngực, sau đó cộng thêm offset Y
+            local head = character:FindFirstChild("Head")
+            local basePos = head and head.Position or (character:FindFirstChild("HumanoidRootPart") and character.HumanoidRootPart.Position + Vector3.new(0, 1.5, 0)) or Camera.CFrame.Position
+            local camPos = basePos + CameraOffset  -- Nâng camera lên 0.3
+
+            -- Khóa chặt camera, hướng về target (thân)
+            Camera.CFrame = CFrame.lookAt(camPos, targetPos)
+
+            -- Vòng ngắm động bám theo targetPos
+            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+            if onScreen then
+                local dist = (camPos - targetPos).Magnitude
+                local scale = math.clamp(150 / dist, 0.5, 2.5) 
+                DynamicFrame.Size = UDim2.new(0, 100 * scale, 0, 100 * scale)
+                DynamicFrame.Position = UDim2.new(0, screenPos.X - (DynamicFrame.Size.X.Offset/2), 0, screenPos.Y - (DynamicFrame.Size.Y.Offset/2))
+                DynamicFrame.Visible = true
+            else
+                DynamicFrame.Visible = false
+            end
+        end
+    else
+        DynamicFrame.Visible = false
+    end
+end)
+
+-- Bật/tắt
+ToggleButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    if AimlockEnabled then
+        CurrentTarget = getClosestTarget()
+        if not CurrentTarget then AimlockEnabled = false end
+    else
+        CurrentTarget = nil
+    end
+end)
