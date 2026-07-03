@@ -1,0 +1,171 @@
+-- ===== CẤU HÌNH =====
+local CONFIG = {
+    AimPart = "HumanoidRootPart",   -- "Head" nếu muốn headshot
+    MaxDistance = 400,              -- tầm khóa
+    LockKey = Enum.KeyCode.LeftControl, -- phím tắt bật/tắt
+    IgnoreWalls = true,             -- true = xuyên tường (không check vật cản)
+    TargetTeam = true,              -- true = chỉ aim enemy (nếu game có đội)
+}
+
+-- ===== KHỞI TẠO =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local TargetPart = nil
+
+-- ===== HÀM TÌM MỤC TIÊU TỐT NHẤT =====
+local function getBestTarget()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local best = nil
+    local bestDist = math.huge
+
+    -- Quét tất cả model trong workspace (gồm cả NPC và Player)
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model ~= char then
+            local hum = model:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                -- Bỏ qua người chơi cùng team (nếu bật)
+                if CONFIG.TargetTeam then
+                    local player = Players:GetPlayerFromCharacter(model)
+                    if player and player.Team == LocalPlayer.Team then
+                        continue
+                    end
+                end
+                local part = model:FindFirstChild(CONFIG.AimPart)
+                if part then
+                    local dist = (root.Position - part.Position).Magnitude
+                    if dist <= CONFIG.MaxDistance then
+                        -- Nếu không xuyên tường, kiểm tra vật cản
+                        if not CONFIG.IgnoreWalls then
+                            local ray = Ray.new(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * dist)
+                            local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char, model})
+                            if hit and not hit:IsDescendantOf(model) then
+                                continue
+                            end
+                        end
+                        if dist < bestDist then
+                            bestDist = dist
+                            best = model
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- ===== VÒNG LẶP CHÍNH =====
+RunService:BindToRenderStep("HardLock", Enum.RenderPriority.Camera.Value + 200, function()
+    if not AimlockEnabled then
+        if TargetPart then
+            -- Ẩn crosshair
+            local billboard = TargetPart:FindFirstChild("AimlockCrosshair")
+            if billboard then billboard:Destroy() end
+            TargetPart = nil
+        end
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char then
+        CurrentTarget = nil
+        TargetPart = nil
+        return
+    end
+
+    -- Kiểm tra target hiện tại còn hợp lệ không
+    local targetValid = false
+    if CurrentTarget and CurrentTarget.Parent then
+        local hum = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        local part = CurrentTarget:FindFirstChild(CONFIG.AimPart)
+        if hum and hum.Health > 0 and part then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local dist = (root.Position - part.Position).Magnitude
+                if dist <= CONFIG.MaxDistance then
+                    targetValid = true
+                    TargetPart = part
+                end
+            end
+        end
+    end
+
+    -- Nếu target không hợp lệ, tìm mới
+    if not targetValid then
+        CurrentTarget = getBestTarget()
+        if CurrentTarget then
+            TargetPart = CurrentTarget:FindFirstChild(CONFIG.AimPart)
+        else
+            TargetPart = nil
+        end
+    end
+
+    -- Nếu có target hợp lệ, KHÓA CỨNG (không mượt)
+    if TargetPart then
+        -- Gắn crosshair
+        local billboard = TargetPart:FindFirstChild("AimlockCrosshair")
+        if not billboard then
+            billboard = Instance.new("BillboardGui")
+            billboard.Name = "AimlockCrosshair"
+            billboard.AlwaysOnTop = true
+            billboard.Size = UDim2.new(0, 50, 0, 50)
+            billboard.Parent = TargetPart
+            -- Tạo crosshair đơn giản (có thể tùy chỉnh)
+            local frame = Instance.new("Frame", billboard)
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundTransparency = 1
+            local line1 = Instance.new("Frame", frame)
+            line1.Size = UDim2.new(0.2, 0, 0.05, 0)
+            line1.Position = UDim2.new(0.5, -0.1, 0.5, -0.025)
+            line1.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+            local line2 = line1:Clone()
+            line2.Position = UDim2.new(0.5, -0.1, 0.5, -0.025)
+            line2.Rotation = 90
+            line2.Parent = frame
+        end
+
+        -- ÉP CAMERA VÀO MỤC TIÊU (lập tức)
+        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, TargetPart.Position)
+
+        -- Đổi màu nút (tuỳ bạn có dùng GUI)
+        -- Nếu bạn vẫn dùng GUI thì có thể thêm code ở đây
+    else
+        -- Không có target, xoá crosshair nếu có
+        if TargetPart then
+            local billboard = TargetPart:FindFirstChild("AimlockCrosshair")
+            if billboard then billboard:Destroy() end
+            TargetPart = nil
+        end
+    end
+end)
+
+-- ===== BẬT/TẮT BẰNG PHÍM =====
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == CONFIG.LockKey then
+        AimlockEnabled = not AimlockEnabled
+        if not AimlockEnabled then
+            CurrentTarget = nil
+            TargetPart = nil
+            -- Xoá crosshair toàn bộ
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v.Name == "AimlockCrosshair" then
+                    v:Destroy()
+                end
+            end
+        end
+    end
+end)
+
+-- ===== THÔNG BÁO =====
+print("Aimlock đã sẵn sàng! Nhấn Ctrl (LeftControl) để bật/tắt.")
