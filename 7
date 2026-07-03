@@ -1,0 +1,175 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart"
+local MaxDistance = 300
+
+-- 1. GUI NÚT BẤM V11 (Fix lỗi tàng hình do Executor chặn CoreGui)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "HiruzAimlockV11"
+ScreenGui.ResetOnSpawn = false -- Giữ nút không bị mất khi reset nhân vật hoặc chết
+
+-- Đường lách luật: Tìm chỗ nhét UI an toàn nhất cho Executor điện thoại
+local success = pcall(function()
+    ScreenGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+end)
+if not success then
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- Nút quét mục tiêu (Mặc định hiện)
+local ScanButton = Instance.new("TextButton", ScreenGui)
+ScanButton.Size = UDim2.new(0, 130, 0, 130) -- Tròn to 
+ScanButton.Position = UDim2.new(0.75, 0, 0.25, 0) -- Kéo vào trong 1 tí cho đỡ sát mép màn hình đt
+ScanButton.BackgroundColor3 = Color3.fromRGB(150, 150, 150) -- Xám nhạt
+ScanButton.BackgroundTransparency = 0.5 -- Trong suốt
+ScanButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+ScanButton.Font = Enum.Font.GothamBold
+ScanButton.TextSize = 14
+ScanButton.Text = "QUÉT\nMỤC TIÊU"
+ScanButton.Active = true
+ScanButton.Draggable = true
+
+-- Nút cố định Aimlock (Mặc định ẩn, chỉ hiện khi đã quét thấy)
+local FixButton = Instance.new("TextButton", ScreenGui)
+FixButton.Size = UDim2.new(0, 130, 0, 130)
+FixButton.Position = UDim2.new(0.75, 0, 0.25, 0)
+FixButton.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+FixButton.BackgroundTransparency = 0.5
+FixButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FixButton.Font = Enum.Font.GothamBold
+FixButton.TextSize = 14
+FixButton.Text = "CỐ ĐỊNH\nAIMLOCK"
+FixButton.Active = true
+FixButton.Draggable = true
+FixButton.Visible = false
+
+-- Bo góc tròn xoe và viền xám đậm cho cả 2 nút
+for _, btn in ipairs({ScanButton, FixButton}) do
+    local UICorner = Instance.new("UICorner", btn)
+    UICorner.CornerRadius = UDim.new(1, 0) -- Ép thành hình tròn 100%
+
+    local UIStroke = Instance.new("UIStroke", btn)
+    UIStroke.Color = Color3.fromRGB(50, 50, 50) -- Viền xám đậm
+    UIStroke.Thickness = 3
+    UIStroke.Transparency = 0.5
+end
+
+-- Dấu kiểm màu xanh cho nút Cố định (Mặc định ẩn)
+local Checkmark = Instance.new("TextLabel", FixButton)
+Checkmark.Size = UDim2.new(0, 20, 0, 20)
+Checkmark.Position = UDim2.new(0.75, 0, 0.15, 0)
+Checkmark.BackgroundTransparency = 1
+Checkmark.Text = "✓"
+Checkmark.TextColor3 = Color3.fromRGB(50, 255, 50)
+Checkmark.Font = Enum.Font.GothamBold
+Checkmark.TextSize = 30 
+Checkmark.Visible = false
+
+-- 2. HỆ THỐNG GLOW
+local EspGlow = Instance.new("Highlight")
+EspGlow.Name = "HiruzAimGlow"
+EspGlow.FillColor = Color3.fromRGB(0, 150, 255)
+EspGlow.FillTransparency = 0.5
+EspGlow.OutlineColor = Color3.fromRGB(255, 255, 255)
+EspGlow.OutlineTransparency = 0
+EspGlow.Enabled = false
+EspGlow.Parent = workspace
+
+local function applyGlow(target)
+    EspGlow.Adornee = target
+    EspGlow.Enabled = true
+end
+
+local function removeGlow()
+    EspGlow.Enabled = false
+    EspGlow.Adornee = nil
+end
+
+-- 3. HÀM QUÉT MỤC TIÊU
+local function getClosestTarget()
+    local closestTarget = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= myChar and obj:FindFirstChild(AimPart) then
+            local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 and not obj:IsA("Accessory") then
+                if Players:GetPlayerFromCharacter(obj) == LocalPlayer then continue end
+                
+                local actualDistance = (myChar.HumanoidRootPart.Position - obj[AimPart].Position).Magnitude
+                if actualDistance > MaxDistance then continue end
+
+                local screenPos, onScreen = Camera:WorldToViewportPoint(obj[AimPart].Position)
+                if onScreen then
+                    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                    local distanceToCenter = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                    
+                    if distanceToCenter < shortestDistance then
+                        shortestDistance = distanceToCenter
+                        closestTarget = obj
+                    end
+                end
+            end
+        end
+    end
+    return closestTarget
+end
+
+-- 4. BIND TO RENDER STEP (PRIORITY 1000 - CHỐNG LỎNG BỞI DEEPSEEK)
+RunService:BindToRenderStep("HiruzHardLock", 1000, function()
+    if AimlockEnabled and CurrentTarget and CurrentTarget:FindFirstChild(AimPart) then
+        local humanoid = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        local myChar = LocalPlayer.Character
+        
+        if humanoid and humanoid.Health > 0 and myChar and myChar:FindFirstChild("HumanoidRootPart") then
+            local targetPos = CurrentTarget[AimPart].Position
+            local myHRP = myChar.HumanoidRootPart
+            
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetPos)
+            local lookPos = Vector3.new(targetPos.X, myHRP.Position.Y, targetPos.Z)
+            myHRP.CFrame = CFrame.lookAt(myHRP.Position, lookPos)
+        else
+            CurrentTarget = nil
+            removeGlow()
+            AimlockEnabled = false
+            Checkmark.Visible = false
+            FixButton.Visible = false
+            ScanButton.Visible = true
+        end
+    end
+end)
+
+-- 5. SỰ KIỆN NÚT QUÉT
+ScanButton.MouseButton1Click:Connect(function()
+    CurrentTarget = getClosestTarget()
+    if CurrentTarget then
+        applyGlow(CurrentTarget)
+        ScanButton.Visible = false
+        FixButton.Visible = true
+    else
+        ScanButton.Text = "NO TARGET"
+        task.wait(1)
+        ScanButton.Text = "QUÉT\nMỤC TIÊU"
+    end
+end)
+
+-- 6. SỰ KIỆN NÚT CỐ ĐỊNH
+FixButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    if AimlockEnabled then
+        Checkmark.Visible = true
+    else
+        Checkmark.Visible = false
+        CurrentTarget = nil
+        removeGlow()
+        FixButton.Visible = false
+        ScanButton.Visible = true
+    end
+end)
