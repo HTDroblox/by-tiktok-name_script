@@ -1,0 +1,159 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local AimlockEnabled = false
+local CurrentTarget = nil
+local AimPart = "HumanoidRootPart" -- Vị trí khóa
+local MaxDistance = 300
+
+-- ===== TẠO GIAO DIỆN NÚT BẬT/TẮT (ScreenGui) =====
+local ScreenGui = Instance.new("ScreenGui", (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "HiruzAimlockV19"
+ScreenGui.ResetOnSpawn = false
+
+local ToggleButton = Instance.new("ImageButton", ScreenGui)
+ToggleButton.Size = UDim2.new(0, 79, 0, 79)
+ToggleButton.Position = UDim2.new(0.8, 0, 0.4, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ToggleButton.BackgroundTransparency = 0.5
+ToggleButton.Draggable = true
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1, 0)
+
+local UIStroke = Instance.new("UIStroke", ToggleButton)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.2
+
+local LockIcon = Instance.new("ImageLabel", ToggleButton)
+LockIcon.Size = UDim2.new(0, 45, 0, 45)
+LockIcon.Position = UDim2.new(0.5, -22.5, 0.5, -22.5)
+LockIcon.BackgroundTransparency = 1
+LockIcon.Image = "rbxassetid://237305954"
+LockIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+
+-- ===== TẠO CROSSHAIR DÍNH LÊN NGƯỜI (BillboardGui) =====
+local CrosshairColor = Color3.fromRGB(0, 255, 255) -- Màu Trắng Xanh (Cyan) hỗ trợ ngắm bắn
+local TargetGui = Instance.new("BillboardGui")
+TargetGui.Name = "AimlockCrosshair"
+TargetGui.AlwaysOnTop = true
+TargetGui.Size = UDim2.new(0, 60, 0, 60) 
+TargetGui.LightInfluence = 0
+
+local Container = Instance.new("Frame", TargetGui)
+Container.Size = UDim2.new(1, 0, 1, 0)
+Container.BackgroundTransparency = 1
+
+local function makeLine(length, thick, pos, rot)
+    local line = Instance.new("Frame", Container)
+    line.BackgroundColor3 = CrosshairColor
+    line.BorderSizePixel = 0
+    line.Size = UDim2.new(0, length, 0, thick)
+    line.Position = pos
+    line.AnchorPoint = Vector2.new(0.5, 0.5)
+    line.Rotation = rot
+end
+
+makeLine(20, 2, UDim2.new(0.2, 0, 0.2, 0), -45) 
+makeLine(20, 2, UDim2.new(0.8, 0, 0.2, 0), 45)  
+makeLine(20, 2, UDim2.new(0.2, 0, 0.8, 0), 45)  
+makeLine(20, 2, UDim2.new(0.8, 0, 0.8, 0), -45) 
+
+local dot = Instance.new("Frame", Container)
+dot.BackgroundColor3 = CrosshairColor
+dot.Size = UDim2.new(0, 6, 0, 6)
+dot.Position = UDim2.new(0.5, 0, 0.5, 0)
+dot.AnchorPoint = Vector2.new(0.5, 0.5)
+Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+-- ===== HÀM TÌM MỤC TIÊU =====
+local function getClosestTarget()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+
+    local rootPos = char.HumanoidRootPart.Position
+    local closest, minDist = nil, math.huge
+    local viewportCenter = Camera.ViewportSize / 2
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local targetChar = player.Character
+            if targetChar and targetChar:FindFirstChild(AimPart) then
+                local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 and not targetChar:FindFirstChildOfClass("ForceField") then
+                    local targetPos = targetChar[AimPart].Position
+                    local dist = (rootPos - targetPos).Magnitude
+                    
+                    if dist < MaxDistance then
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+                        if onScreen then
+                            local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+                            if screenDist < minDist then
+                                minDist = screenDist
+                                closest = targetChar
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ===== MAIN LOOP (KHÓA CAMERA SIÊU CHẮC) =====
+RunService:BindToRenderStep("HiruzHardLock", Enum.RenderPriority.Camera.Value + 1, function()
+    if AimlockEnabled and CurrentTarget then
+        local targetRoot = CurrentTarget:FindFirstChild(AimPart)
+        local humanoid = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        
+        if targetRoot and humanoid and humanoid.Health > 0 then
+            -- 1. Gắn Crosshair bám chặt mục tiêu
+            if TargetGui.Parent ~= targetRoot then
+                TargetGui.Parent = targetRoot
+            end
+            
+            -- 2. Khóa cứng Camera (Hard Lock) - Bỏ qua Lerp
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetRoot.Position)
+            return
+        end
+    end
+    
+    -- Gỡ Crosshair nếu tắt hoặc mất mục tiêu
+    TargetGui.Parent = nil
+end)
+
+-- ===== SỰ KIỆN NÚT BẤM =====
+ToggleButton.MouseButton1Click:Connect(function()
+    AimlockEnabled = not AimlockEnabled
+    
+    if AimlockEnabled then
+        CurrentTarget = getClosestTarget()
+        if not CurrentTarget then
+            AimlockEnabled = false
+            UIStroke.Color = Color3.fromRGB(255, 255, 255)
+        else
+            UIStroke.Color = CrosshairColor -- Đổi màu viền nút thành Trắng Xanh khi bật
+        end
+    else
+        CurrentTarget = nil
+        TargetGui.Parent = nil
+        UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+-- ===== XỬ LÝ KHI MỤC TIÊU CHẾT =====
+RunService.Heartbeat:Connect(function()
+    if AimlockEnabled and CurrentTarget then
+        local hum = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 or not CurrentTarget.Parent then
+            TargetGui.Parent = nil
+            CurrentTarget = getClosestTarget()
+            
+            if not CurrentTarget then
+                AimlockEnabled = false
+                UIStroke.Color = Color3.fromRGB(255, 255, 255)
+            end
+        end
+    end
+end)
