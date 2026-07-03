@@ -1,0 +1,47 @@
+local UIS = game:GetService("UserInputService")
+local button = script.Parent
+
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+-- Hàm cập nhật vị trí của nút khi kéo
+local function update(input)
+	local delta = input.Position - dragStart
+	button.Position = UDim2.new(
+		startPos.X.Scale, 
+		startPos.X.Offset + delta.X, 
+		startPos.Y.Scale, 
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+-- Bắt đầu kéo (Hỗ trợ cả chuột PC và Cảm ứng điện thoại)
+button.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = button.Position
+		
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+-- Nhận diện thao tác di chuyển
+button.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+-- Cập nhật liên tục khi màn hình có sự thay đổi
+UIS.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		update(input)
+	end
+end)
