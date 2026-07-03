@@ -1,0 +1,913 @@
+-- ============================================================
+--  HTD.roblox - CORE (Phần chung cho tất cả các tab)
+-- ============================================================
+
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+-- Tạo Window
+local Window = Fluent:CreateWindow({
+    Title = "HTD.roblox",
+    SubTitle = "Blox Fruit",
+    TabWidth = 120,
+    Size = UDim2.fromOffset(400, 370),
+    Acrylic = true,
+    Theme = "Dark",
+    Image = "rbxassetid://128185233852",
+    MinimizeKey = Enum.KeyCode.RightControl
+})
+
+-- Tạo các Tab
+local Tabs = {
+    Farming     = Window:AddTab({ Title = "Farming", Icon = "sword" }),
+    Fishing     = Window:AddTab({ Title = "Fishing", Icon = "fish" }),
+    Item        = Window:AddTab({ Title = "Item", Icon = "gift" }),
+    SeaEvent    = Window:AddTab({ Title = "Sea Event", Icon = "ship" }),
+    Volcano     = Window:AddTab({ Title = "Volcano", Icon = "fire" }),
+    Dragon      = Window:AddTab({ Title = "Dragon Dojo", Icon = "dragon" }),
+    RaidDungeon = Window:AddTab({ Title = "Raid/Dungeon", Icon = "cube" }),
+    Shop        = Window:AddTab({ Title = "Shop", Icon = "store" }),
+    ESP         = Window:AddTab({ Title = "ESP", Icon = "eye" }),
+    PvP         = Window:AddTab({ Title = "PvP", Icon = "crosshair" }),
+    Settings    = Window:AddTab({ Title = "Settings", Icon = "sliders" })
+}
+local Options = Fluent.Options
+
+-- ===== HÀM TIỆN ÍCH DÙNG CHUNG =====
+local function SafeTeleport(pos)
+    local char = game.Players.LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = pos
+    end
+end
+
+local function BuyItem(name, price, currency)
+    print("[Shop] Mua " .. name .. " giá " .. price .. " " .. currency)
+    Fluent:Notify({ Title = "Shop", Content = "Đã mua " .. name .. "!", Duration = 3 })
+end
+
+local function GoToSea(n)
+    local pos = { [2]=Vector3.new(1000,0,2000), [3]=Vector3.new(-500,0,-500) }
+    if pos[n] then SafeTeleport(CFrame.new(pos[n])) end
+end
+
+local function RunLoop(name, time, msg)
+    local coro = nil
+    Options[name]:OnChanged(function()
+        if Options[name].Value then
+            if coro then coroutine.close(coro); coro = nil end
+            coro = coroutine.create(function()
+                while Options[name].Value do
+                    print(msg)
+                    task.wait(time or 3)
+                end
+            end)
+            coroutine.resume(coro)
+        else
+            if coro then
+                coroutine.close(coro)
+                coro = nil
+            end
+        end
+    end)
+end
+
+-- ===== LOGO HÌNH TRÒN =====
+local function CreateLogo()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Name = "HTD"
+
+    local ToggleButton = Instance.new("ImageButton")
+    ToggleButton.Parent = ScreenGui
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    ToggleButton.BackgroundTransparency = 0.1
+    ToggleButton.BorderColor3 = Color3.fromRGB(255,0,0)
+    ToggleButton.BorderSizePixel = 2
+    ToggleButton.Position = UDim2.new(0.01,0,0.85,0)
+    ToggleButton.Size = UDim2.new(0,55,0,55)
+    ToggleButton.Image = "rbxassetid://125357138591690"
+    ToggleButton.ImageRectSize = Vector2.new(0,0)
+    ToggleButton.Name = "ToggleButton"
+
+    local Border = Instance.new("UICorner")
+    Border.Parent = ToggleButton
+    Border.CornerRadius = UDim.new(1,0)
+
+    local Shadow = Instance.new("UIStroke")
+    Shadow.Parent = ToggleButton
+    Shadow.Color = Color3.fromRGB(255,50,50)
+    Shadow.Thickness = 2
+    Shadow.Transparency = 0.5
+    Shadow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    ToggleButton.MouseEnter:Connect(function()
+        ToggleButton.BackgroundTransparency = 0
+        Shadow.Transparency = 0
+    end)
+    ToggleButton.MouseLeave:Connect(function()
+        ToggleButton.BackgroundTransparency = 0.1
+        Shadow.Transparency = 0.5
+    end)
+
+    local dragging = false
+    local dragStart, startPos
+    ToggleButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = ToggleButton.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    ToggleButton.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - dragStart
+            ToggleButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                              startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    ToggleButton.MouseButton1Click:Connect(function()
+        Window:Toggle()
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(255,50,50)
+        task.wait(0.1)
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    end)
+
+    local Glow = Instance.new("ImageLabel")
+    Glow.Parent = ToggleButton
+    Glow.BackgroundTransparency = 1
+    Glow.Position = UDim2.new(-0.2,0,-0.2,0)
+    Glow.Size = UDim2.new(1.4,0,1.4,0)
+    Glow.Image = "rbxassetid://2763166771"
+    Glow.ImageColor3 = Color3.fromRGB(255,0,0)
+    Glow.ImageTransparency = 0.8
+    Glow.ZIndex = 0
+    Glow.Name = "Glow"
+
+    task.spawn(function()
+        while ScreenGui.Parent do
+            Glow.ImageTransparency = 0.6 + math.sin(tick()*1.5)*0.3
+            task.wait(0.05)
+        end
+    end)
+
+    Fluent:Notify({ Title = "HTD.roblox", Content = "Bấm logo để mở/tắt menu!", Duration = 3 })
+end
+CreateLogo()
+
+-- ===== PHÍM TẮT =====
+game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F1 then Window:Toggle() end
+end)
+
+-- Export toàn bộ để các file khác dùng chung
+return {
+    Window = Window,
+    Tabs = Tabs,
+    Options = Options,
+    SafeTeleport = SafeTeleport,
+    BuyItem = BuyItem,
+    GoToSea = GoToSea,
+    RunLoop = RunLoop,
+    Fluent = Fluent,
+    SaveManager = SaveManager,
+    InterfaceManager = InterfaceManager
+}
+-- ============================================================
+--  TAB 1: FARMING
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local Options = Core.Options
+
+local Farm = Tabs.Farming
+
+Farm:AddDropdown({
+    Title = "Vũ khí",
+    Values = {"Melee", "Sword", "Fruit", "Gun"},
+    Default = "Melee"
+})
+
+Farm:AddToggle({ Title = "Farm Lever", Default = false })
+Farm:AddToggle({ Title = "Farm Katakuri", Default = false })
+Farm:AddToggle({ Title = "Farm Bone", Default = false })
+Farm:AddToggle({ Title = "Auto Farm Chests", Default = false })
+Farm:AddToggle({ Title = "teleport Farm Chests", Default = false })
+
+Farm:AddInput({
+    Title = "Teleport",
+    Default = "Island",
+    Placeholder = "Nhập toạ độ..."
+})
+Farm:AddButton({
+    Title = "Teleport",
+    Callback = function()
+        print("[Teleport] Đến: " .. Options.TeleportInput.Value)
+    end
+})
+
+Farm:AddToggle({ Title = "Auto Collect Fruit", Default = false })
+Farm:AddToggle({ Title = "Auto Collect Fruit (Hop)", Default = false })
+
+Farm:AddParagraph({ Title = "BOSS FARM", Content = "" })
+Farm:AddDropdown({
+    Title = "Sea 1 Boss",
+    Values = {"Boss A","Boss B","Boss C"},
+    Default = "Boss A"
+})
+Farm:AddToggle({ Title = "Auto Boss Sea 1", Default = false })
+
+Farm:AddDropdown({
+    Title = "Sea 2 Boss",
+    Values = {"Boss X","Boss Y","Boss Z"},
+    Default = "Boss X"
+})
+Farm:AddToggle({ Title = "Auto Boss Sea 2", Default = false })
+
+Farm:AddDropdown({
+    Title = "Sea 3 Boss",
+    Values = {"Boss P","Boss Q","Boss R"},
+    Default = "Boss P"
+})
+Farm:AddToggle({ Title = "Auto Boss Sea 3", Default = false })
+
+Farm:AddParagraph({ Title = "MATERIALS", Content = "" })
+Farm:AddDropdown({
+    Title = "Chọn Material",
+    Values = {"Scrap Metal","Wood","Leather","Mystic Droplet"},
+    Default = "Scrap Metal"
+})
+Farm:AddToggle({ Title = "Auto Farm Material", Default = false })
+
+print("[HTD] Tab Farming đã load!")
+-- ============================================================
+--  TAB 2: FISHING
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local SafeTeleport = Core.SafeTeleport
+
+local Fish = Tabs.Fishing
+
+Fish:AddDropdown({
+    Title = "Cần câu",
+    Values = {"Wooden Rod", "Fishing Rod", "Magnetic Rod", "Mythical Rod"},
+    Default = "Fishing Rod"
+})
+
+Fish:AddDropdown({
+    Title = "Mồi",
+    Values = {"Worm", "Shrimp", "Lobster", "Mythical Bait"},
+    Default = "Worm"
+})
+
+Fish:AddToggle({ Title = "Auto Fishing", Default = false })
+Fish:AddToggle({ Title = "Auto Accept Quest", Default = false })
+
+Fish:AddButton({
+    Title = "Teleport Fishing NPC",
+    Callback = function()
+        SafeTeleport(CFrame.new(1000,10,2000))
+    end
+})
+
+print("[HTD] Tab Fishing đã load!")
+-- ============================================================
+--  TAB 3: ITEM
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local Options = Core.Options
+local GoToSea = Core.GoToSea
+
+local Item = Tabs.Item
+
+Item:AddParagraph({ Title = "SEA 1", Content = "" })
+Item:AddToggle({ Title = "Go To Sea 2", Default = false })
+Item:AddToggle({ Title = "Complete Bartilo Quest", Default = false })
+Item:AddToggle({ Title = "Get Saber", Default = false })
+Item:AddToggle({ Title = "Get Pole", Default = false })
+Item:AddToggle({ Title = "Get Trident", Default = false })
+
+Item:AddParagraph({ Title = "SEA 2", Content = "" })
+Item:AddToggle({ Title = "Go To Sea 3", Default = false })
+Item:AddToggle({ Title = "Auto Factory Raid", Default = false })
+Item:AddToggle({ Title = "Auto Darkbeard", Default = false })
+Item:AddToggle({ Title = "Auto Cursed Captain", Default = false })
+Item:AddToggle({ Title = "Get Longsword", Default = false })
+Item:AddToggle({ Title = "Get Dragon Trident", Default = false })
+Item:AddToggle({ Title = "Get Rengoku", Default = false })
+Item:AddToggle({ Title = "Get Gravity Cane", Default = false })
+
+Item:AddParagraph({ Title = "SEA 3", Content = "" })
+Item:AddToggle({ Title = "Auto Pirate Raid", Default = false })
+Item:AddToggle({ Title = "Get Buddy Sword", Default = false })
+Item:AddToggle({ Title = "Get Yama", Default = false })
+Item:AddToggle({ Title = "Get Tushita", Default = false })
+Item:AddToggle({ Title = "Get Canvander", Default = false })
+
+-- Xử lý sự kiện
+Options.GoToSea2:OnChanged(function()
+    if Options.GoToSea2.Value then GoToSea(2); Options.GoToSea2:SetValue(false) end
+end)
+
+Options.GoToSea3:OnChanged(function()
+    if Options.GoToSea3.Value then GoToSea(3); Options.GoToSea3:SetValue(false) end
+end)
+
+Options.BartiloQuest:OnChanged(function()
+    if Options.BartiloQuest.Value then
+        print("[Item] Bartilo Quest")
+        Options.BartiloQuest:SetValue(false)
+    end
+end)
+
+Options.GetSaber:OnChanged(function()
+    if Options.GetSaber.Value then
+        print("[Item] Lấy Saber...")
+        Options.GetSaber:SetValue(false)
+    end
+end)
+
+Options.GetPole:OnChanged(function()
+    if Options.GetPole.Value then
+        print("[Item] Lấy Pole...")
+        Options.GetPole:SetValue(false)
+    end
+end)
+
+Options.GetTrident:OnChanged(function()
+    if Options.GetTrident.Value then
+        print("[Item] Lấy Trident...")
+        Options.GetTrident:SetValue(false)
+    end
+end)
+
+Options.GetLongsword:OnChanged(function()
+    if Options.GetLongsword.Value then
+        print("[Item] Lấy Longsword...")
+        Options.GetLongsword:SetValue(false)
+    end
+end)
+
+Options.GetDragonTrident:OnChanged(function()
+    if Options.GetDragonTrident.Value then
+        print("[Item] Lấy Dragon Trident...")
+        Options.GetDragonTrident:SetValue(false)
+    end
+end)
+
+Options.GetRengoku:OnChanged(function()
+    if Options.GetRengoku.Value then
+        print("[Item] Lấy Rengoku...")
+        Options.GetRengoku:SetValue(false)
+    end
+end)
+
+Options.GetGravityCane:OnChanged(function()
+    if Options.GetGravityCane.Value then
+        print("[Item] Lấy Gravity Cane...")
+        Options.GetGravityCane:SetValue(false)
+    end
+end)
+
+Options.GetBuddySword:OnChanged(function()
+    if Options.GetBuddySword.Value then
+        print("[Item] Lấy Buddy Sword...")
+        Options.GetBuddySword:SetValue(false)
+    end
+end)
+
+Options.GetYama:OnChanged(function()
+    if Options.GetYama.Value then
+        print("[Item] Lấy Yama...")
+        Options.GetYama:SetValue(false)
+    end
+end)
+
+Options.GetTushita:OnChanged(function()
+    if Options.GetTushita.Value then
+        print("[Item] Lấy Tushita...")
+        Options.GetTushita:SetValue(false)
+    end
+end)
+
+Options.GetCanvander:OnChanged(function()
+    if Options.GetCanvander.Value then
+        print("[Item] Lấy Canvander...")
+        Options.GetCanvander:SetValue(false)
+    end
+end)
+
+Options.AutoFactory:OnChanged(function()
+    print("[Item] Auto Factory:", Options.AutoFactory.Value)
+end)
+
+Options.AutoDarkbeard:OnChanged(function()
+    print("[Item] Auto Darkbeard:", Options.AutoDarkbeard.Value)
+end)
+
+Options.AutoCursedCaptain:OnChanged(function()
+    print("[Item] Auto Cursed Captain:", Options.AutoCursedCaptain.Value)
+end)
+
+Options.AutoPirate:OnChanged(function()
+    print("[Item] Auto Pirate:", Options.AutoPirate.Value)
+end)
+
+print("[HTD] Tab Item đã load!")
+-- ============================================================
+--  TAB 4: SEA EVENT
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local SafeTeleport = Core.SafeTeleport
+
+local Sea = Tabs.SeaEvent
+
+Sea:AddDropdown({
+    Title = "Thuyền",
+    Values = {"Rowboat","Sailboat","Motorboat","Flying Boat","Mythical Boat"},
+    Default = "Rowboat"
+})
+
+Sea:AddDropdown({
+    Title = "Khu vực biển",
+    Values = {"Sea 1","Sea 2","Sea 3","Sea 4","Sea 5","Sea 6","Infinite"},
+    Default = "Sea 1"
+})
+
+Sea:AddToggle({ Title = "Auto Lái Thuyền", Default = false })
+Sea:AddToggle({ Title = "Auto Fish", Default = false })
+Sea:AddToggle({ Title = "Auto Shark", Default = false })
+Sea:AddToggle({ Title = "Auto Electric Shark", Default = false })
+Sea:AddToggle({ Title = "Auto Terror Shark", Default = false })
+Sea:AddToggle({ Title = "Auto Sea Beast", Default = false })
+Sea:AddToggle({ Title = "Auto Leviathan", Default = false })
+
+Sea:AddParagraph({ Title = "KITSUNE EVENT", Content = "" })
+Sea:AddButton({
+    Title = "Fly To Kitsune Shrine",
+    Callback = function()
+        SafeTeleport(CFrame.new(5000,200,3000))
+    end
+})
+
+Sea:AddToggle({ Title = "Auto Collect Azure Embers", Default = false })
+Sea:AddButton({ Title = "Click To Trade", Callback = function() print("Trade") end })
+
+print("[HTD] Tab Sea Event đã load!")
+-- ============================================================
+--  TAB 5: VOLCANO
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+
+local Volcano = Tabs.Volcano
+
+Volcano:AddParagraph({ Title = "CRAFT", Content = "" })
+Volcano:AddButton({ Title = "Craft Dragon Heart", Callback = function() print("Craft Dragon Heart") end })
+Volcano:AddButton({ Title = "Craft Dragon Storm", Callback = function() print("Craft Dragon Storm") end })
+Volcano:AddButton({ Title = "Craft Magnet", Callback = function() print("Craft Magnet") end })
+Volcano:AddToggle({ Title = "Auto Farm Materials", Default = false })
+
+Volcano:AddParagraph({ Title = "DRAGON ISLAND", Content = "" })
+Volcano:AddButton({ Title = "Auto Find Dragon Island", Callback = function() print("Finding Dragon Island") end })
+Volcano:AddDropdown({
+    Title = "Weapon",
+    Values = {"Melee","Sword","Fruit","Gun"},
+    Default = "Melee"
+})
+Volcano:AddDropdown({
+    Title = "Attack Method",
+    Values = {"Normal","Combo","Skill Spam"},
+    Default = "Normal"
+})
+Volcano:AddToggle({ Title = "Attack Aura", Default = false })
+Volcano:AddToggle({ Title = "Kill Aura", Default = false })
+Volcano:AddToggle({ Title = "Auto Break Lava", Default = false })
+
+Volcano:AddParagraph({ Title = "REWARDS", Content = "" })
+Volcano:AddToggle({ Title = "Auto Collect Bones", Default = false })
+Volcano:AddToggle({ Title = "Auto Collect Dragon Egg", Default = false })
+Volcano:AddToggle({ Title = "Reset When Finished", Default = false })
+
+print("[HTD] Tab Volcano đã load!")
+-- ============================================================
+--  TAB 6: DRAGON DOJO
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+
+local Dragon = Tabs.Dragon
+
+Dragon:AddParagraph({ Title = "TỘC RỒNG", Content = "" })
+Dragon:AddToggle({ Title = "Auto Up V1", Default = false })
+Dragon:AddToggle({ Title = "Auto Up V2", Default = false })
+Dragon:AddToggle({ Title = "Auto Up V3", Default = false })
+Dragon:AddToggle({ Title = "Auto Up V4", Default = false })
+
+print("[HTD] Tab Dragon Dojo đã load!")
+-- ============================================================
+--  TAB 7: RAID / DUNGEON
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+
+local Raid = Tabs.RaidDungeon
+
+Raid:AddParagraph({ Title = "FRUIT", Content = "" })
+Raid:AddToggle({ Title = "Auto Random", Default = false })
+Raid:AddToggle({ Title = "Auto Lưu Trữ", Default = false })
+Raid:AddToggle({ Title = "Auto Thả Trái", Default = false })
+Raid:AddButton({
+    Title = "Bay Đến Trái Spawn",
+    Callback = function()
+        local char = game.Players.LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            for _, v in pairs(workspace:GetChildren()) do
+                if v:FindFirstChild("Handle") and v.Name:find("Fruit") then
+                    char.HumanoidRootPart.CFrame = CFrame.new(v.Handle.Position + Vector3.new(0,5,0))
+                    break
+                end
+            end
+        end
+    end
+})
+
+Raid:AddParagraph({ Title = "RAID", Content = "" })
+Raid:AddDropdown({
+    Title = "Chọn Chip",
+    Values = {"Flame","Ice","Dark","Light","Dragon"},
+    Default = "Flame"
+})
+Raid:AddToggle({ Title = "Auto Mua Chip", Default = false })
+Raid:AddToggle({ Title = "Auto Raid", Default = false })
+
+Raid:AddParagraph({ Title = "DUNGEON", Content = "" })
+Raid:AddButton({ Title = "Teleport Dungeon", Callback = function() print("Teleport to dungeon") end })
+Raid:AddToggle({ Title = "Auto Dungeon", Default = false })
+
+print("[HTD] Tab Raid/Dungeon đã load!")
+-- ============================================================
+--  TAB 8: SHOP
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local BuyItem = Core.BuyItem
+
+local Shop = Tabs.Shop
+
+Shop:AddParagraph({ Title = "MUA BẰNG BELI", Content = "" })
+
+Shop:AddParagraph({ Title = "KIẾM", Content = "" })
+Shop:AddButton({ Title = "Katana (1k Beli)", Callback = function() BuyItem("Katana","50","Beli") end })
+Shop:AddButton({ Title = "Cutlass (1k Beli)", Callback = function() BuyItem("Cutlass","500","Beli") end })
+Shop:AddButton({ Title = "Dual Katana (12K Beli)", Callback = function() BuyItem("Dual Katana","12,000","Beli") end })
+Shop:AddButton({ Title = "Iron Mace (25K Beli)", Callback = function() BuyItem("Iron Mace","25,000","Beli") end })
+Shop:AddButton({ Title = "Triple Katana (60K Beli)", Callback = function() BuyItem("Triple Katana","60,000","Beli") end })
+Shop:AddButton({ Title = "Soul Cane (750K Beli)", Callback = function() BuyItem("Soul Cane","750,000","Beli") end })
+
+Shop:AddParagraph({ Title = "SÚNG", Content = "" })
+Shop:AddButton({ Title = "Slingshot (5K Beli)", Callback = function() BuyItem("Slingshot","5,000","Beli") end })
+Shop:AddButton({ Title = "Flintlock (65k Beli)", Callback = function() BuyItem("Flintlock","500,000","Beli") end })
+Shop:AddButton({ Title = "Musket (100k Beli)", Callback = function() BuyItem("Musket","1,000,000","Beli") end })
+
+Shop:AddParagraph({ Title = "PHỤ KIỆN", Content = "" })
+Shop:AddButton({ Title = "Black Cape (50K Beli)", Callback = function() BuyItem("Black Cape","50,000","Beli") end })
+Shop:AddButton({ Title = "Swordsman Hat (150K Beli)", Callback = function() BuyItem("Swordsman Hat","150,000","Beli") end })
+Shop:AddButton({ Title = "Tomoe Ring (500K Beli)", Callback = function() BuyItem("Tomoe Ring","500,000","Beli") end })
+
+Shop:AddParagraph({ Title = "PHONG CÁCH", Content = "" })
+Shop:AddButton({ Title = "Black Leg (150K Beli)", Callback = function() BuyItem("Black Leg","150,000","Beli") end })
+Shop:AddButton({ Title = "Electro (500K Beli)", Callback = function() BuyItem("Electro","500,000","Beli") end })
+Shop:AddButton({ Title = "Fishman Karate (750K Beli)", Callback = function() BuyItem("Fishman Karate","750,000","Beli") end })
+
+Shop:AddParagraph({ Title = "MUA BẰNG FRAGMENTS", Content = "" })
+
+Shop:AddParagraph({ Title = "PHONG CÁCH", Content = "" })
+Shop:AddButton({ Title = "Dragon Breath (1.5K Frag)", Callback = function() BuyItem("Dragon Breath","1,500","Frag") end })
+Shop:AddButton({ Title = "Sharkman Karate (5K Frag)", Callback = function() BuyItem("Sharkman Karate","5,000","Frag") end })
+Shop:AddButton({ Title = "Electric Claw (5K Frag + 3M Beli)", Callback = function() BuyItem("Electric Claw","5K Frag + 3M","") end })
+Shop:AddButton({ Title = "Dragon Talon (5K Frag + 3M Beli)", Callback = function() BuyItem("Dragon Talon","5K Frag + 3M","") end })
+Shop:AddButton({ Title = "Godhuman (5K Frag + 5M Beli)", Callback = function() BuyItem("Godhuman","5K Frag + 5M","") end })
+Shop:AddButton({ Title = "Sanguine Art (5K Frag + 5M Beli)", Callback = function() BuyItem("Sanguine Art","5K Frag + 5M","") end })
+
+Shop:AddParagraph({ Title = "AURA SKINS", Content = "" })
+Shop:AddButton({ Title = "Rare Aura (1.5K Frag)", Callback = function() BuyItem("Rare Aura","1,500","Frag") end })
+Shop:AddButton({ Title = "Legendary Aura (7.5K Frag)", Callback = function() BuyItem("Legendary Aura","7,500","Frag") end })
+
+Shop:AddParagraph({ Title = "VẬT PHẨM KHÁC", Content = "" })
+Shop:AddButton({ Title = "Stat Reset (2.5K Frag)", Callback = function() BuyItem("Stat Reset","2,500","Frag") end })
+
+print("[HTD] Tab Shop đã load!")
+-- ============================================================
+--  TAB 9: ESP
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+
+local Esp = Tabs.ESP
+
+Esp:AddParagraph({ Title = "SEA 1", Content = "" })
+Esp:AddToggle({ Title = "ESP Player", Default = false })
+Esp:AddToggle({ Title = "ESP Berry", Default = false })
+Esp:AddToggle({ Title = "ESP Fruit", Default = false })
+Esp:AddToggle({ Title = "ESP Đảo", Default = false })
+
+Esp:AddParagraph({ Title = "SEA 2", Content = "" })
+Esp:AddToggle({ Title = "ESP Player", Default = false })
+Esp:AddToggle({ Title = "ESP Berry", Default = false })
+Esp:AddToggle({ Title = "ESP Fruit", Default = false })
+Esp:AddToggle({ Title = "ESP Đảo", Default = false })
+Esp:AddToggle({ Title = "ESP Bán kiếm huyền thoại", Default = false })
+Esp:AddToggle({ Title = "ESP Hoa", Default = false })
+Esp:AddToggle({ Title = "ESP Bán màu haki", Default = false })
+
+Esp:AddParagraph({ Title = "SEA 3", Content = "" })
+Esp:AddToggle({ Title = "ESP Player", Default = false })
+Esp:AddToggle({ Title = "ESP Berry", Default = false })
+Esp:AddToggle({ Title = "ESP Fruit", Default = false })
+Esp:AddToggle({ Title = "ESP Đảo", Default = false })
+Esp:AddToggle({ Title = "ESP Đảo Event", Default = false })
+Esp:AddToggle({ Title = "ESP Đảo Leviathan", Default = false })
+Esp:AddToggle({ Title = "ESP Gear", Default = false })
+
+print("[HTD] Tab ESP đã load!")
+-- ============================================================
+--  TAB 10: PVP
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Tabs = Core.Tabs
+local Options = Core.Options
+
+local Pvp = Tabs.PvP
+
+Pvp:AddParagraph({ Title = "TARGET PLAYER", Content = "" })
+Pvp:AddDropdown({
+    Title = "Chọn người chơi",
+    Values = {"Player1","Player2","Player3"},
+    Default = "Player1"
+})
+Pvp:AddToggle({ Title = "Reset danh sách", Default = false })
+Pvp:AddToggle({ Title = "Bay đến người chơi", Default = false })
+Pvp:AddToggle({ Title = "Xem góc nhìn", Default = false })
+
+Pvp:AddParagraph({ Title = "SPEED / JUMP", Content = "" })
+Pvp:AddSlider({
+    Title = "Tốc độ",
+    Default = 16,
+    Min = 16,
+    Max = 500,
+    Rounding = 1
+})
+Pvp:AddSlider({
+    Title = "Nhảy",
+    Default = 7,
+    Min = 7,
+    Max = 500,
+    Rounding = 1
+})
+
+Options.FlyToPlayer:OnChanged(function()
+    if Options.FlyToPlayer.Value then
+        print("[PvP] Bay đến: "..Options.TargetPlayer.Value)
+    end
+end)
+
+Options.SpectatePlayer:OnChanged(function()
+    if Options.SpectatePlayer.Value then
+        print("[PvP] Spectate: "..Options.TargetPlayer.Value)
+    end
+end)
+
+Options.ResetPlayerList:OnChanged(function()
+    if Options.ResetPlayerList.Value then
+        print("[PvP] Reset danh sách")
+        Options.ResetPlayerList:SetValue(false)
+    end
+end)
+
+print("[HTD] Tab PvP đã load!")
+-- ============================================================
+--  TAB 11: SETTINGS
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local Window = Core.Window
+local Tabs = Core.Tabs
+local Options = Core.Options
+local Fluent = Core.Fluent
+local SaveManager = Core.SaveManager
+local InterfaceManager = Core.InterfaceManager
+
+local Settings = Tabs.Settings
+
+Settings:AddParagraph({ Title = "SERVER", Content = "" })
+Settings:AddInput({
+    Title = "Mã server",
+    Default = "",
+    Placeholder = "Nhập mã..."
+})
+Settings:AddButton({
+    Title = "Vào server",
+    Callback = function()
+        print("Join: "..Options.ServerCode.Value)
+    end
+})
+Settings:AddButton({
+    Title = "Copy mã server",
+    Callback = function()
+        setclipboard(game.JobId or "N/A")
+        Fluent:Notify({ Title = "Copied", Content = "Đã copy!", Duration = 2 })
+    end
+})
+Settings:AddButton({
+    Title = "Hop server ngẫu nhiên",
+    Callback = function()
+        print("Hop random")
+    end
+})
+
+Settings:AddParagraph({ Title = "NHẬP ALL CODE", Content = "" })
+Settings:AddButton({
+    Title = "Nhập tất cả code",
+    Callback = function()
+        local codes = {"KITT_RESET","SUB2GAMERROBOT_RESET1","Sub2UncleKizaru","ADMINHACKED","SUB2GAMERROBOT_EXP1","LIGHTNINGABUSE","ADMINFIGHT","GIFTING_HOURS","NOMOREHACK","BANEXPLOIT","EARN_FRUITS","FIGHT4FRUIT","NOEXPLOITER","NOOB2ADMIN","CODESLIDE","ADMINDARES","fruitconcepts","krazydares","TRIPLEABUSE","SEATROLLING","24NOADMIN","REWARDFUN","NEWTROLL","SECRET_ADMIN","Sub2CaptainMaui","kittgaming","Sub2Fer999","Enyu_is_Pro","Magicbus","JCWK","Starcodeheo","Bluxxy","Axiore","TheGreatAce","Sub2OfficialNoobie","Sub2Daigrock","Sub2NoobMaster123","StrawHatMaine","TantaiGaming","Bignews","CHANDLER","Fudd10","fudd10_v2"}
+        for _, c in ipairs(codes) do
+            print("[Code] "..c)
+            task.wait(0.2)
+        end
+        Fluent:Notify({ Title = "Code", Content = "Đã nhập "..#codes.." code!", Duration = 4 })
+    end
+})
+
+Settings:AddParagraph({ Title = "NÚT BẬT/TẮT MENU", Content = "" })
+Settings:AddButton({
+    Title = "Bật/Tắt Menu",
+    Callback = function()
+        Window:Toggle()
+    end
+})
+
+Settings:AddParagraph({ Title = "CÀI ĐẶT", Content = "" })
+Settings:AddToggle({ Title = "ESP 100", Default = false })
+Settings:AddDropdown({
+    Title = "Thời gian",
+    Values = {"1 - Ngày","2 - Đêm"},
+    Default = "1 - Ngày"
+})
+Settings:AddDropdown({
+    Title = "Tốc độ bay",
+    Values = {"150","200","250","300","325","350","400","450","500"},
+    Default = "250"
+})
+Settings:AddToggle({ Title = "Miss", Default = false })
+Settings:AddToggle({ Title = "Xóa xương mù (Fog)", Default = false })
+Settings:AddButton({
+    Title = "Xóa xương mù ngay",
+    Callback = function()
+        game.Lighting.FogEnd = 1000
+        game.Lighting.FogStart = 0
+        for _, v in pairs(workspace:GetChildren()) do
+            if v.Name:lower():find("bone") or v.Name:lower():find("skeleton") then
+                v:Destroy()
+            end
+        end
+        Fluent:Notify({ Title = "Settings", Content = "Đã xóa xương mù!", Duration = 3 })
+    end
+})
+
+Settings:AddToggle({ Title = "Shader Model", Default = false })
+Settings:AddToggle({ Title = "Fast Attack", Default = false })
+Settings:AddToggle({ Title = "Super Attack", Default = false })
+Settings:AddToggle({ Title = "Super Fast Attack", Default = false })
+Settings:AddToggle({ Title = "HTD Attack", Default = false })
+Settings:AddToggle({ Title = "Full Light", Default = false })
+
+-- Xử lý Settings
+Options.ClearFog:OnChanged(function()
+    if Options.ClearFog.Value then
+        game.Lighting.FogEnd = 1000
+        game.Lighting.FogStart = 0
+    else
+        game.Lighting.FogEnd = 100000
+        game.Lighting.FogStart = 0
+    end
+end)
+
+Options.FlySpeed:OnChanged(function()
+    local speed = tonumber(Options.FlySpeed.Value)
+    if speed then
+        local char = game.Players.LocalPlayer.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid.WalkSpeed = speed
+        end
+    end
+end)
+
+Options.ESP100:OnChanged(function()
+    print("[ESP] ESP100:", Options.ESP100.Value)
+end)
+
+Options.FullLight:OnChanged(function()
+    if Options.FullLight.Value then
+        game.Lighting.Brightness = 10
+        game.Lighting.ClockTime = 12
+    else
+        game.Lighting.Brightness = 1
+        game.Lighting.ClockTime = 12
+    end
+end)
+
+Options.TimeMode:OnChanged(function()
+    if Options.TimeMode.Value == "1 - Ngày" then
+        game.Lighting.ClockTime = 12
+    else
+        game.Lighting.ClockTime = 0
+    end
+end)
+
+Options.MissMode:OnChanged(function()
+    print("[Settings] Miss:", Options.MissMode.Value)
+end)
+
+print("[HTD] Tab Settings đã load!")
+-- ============================================================
+--  RUNLOOP: Các vòng lặp cho Toggle
+-- ============================================================
+local Core = require(script.Parent["00_Core"])
+local RunLoop = Core.RunLoop
+
+-- Chạy các toggle cần lặp
+RunLoop("FarmLever", 3, "[Farming] Farm Lever")
+RunLoop("FarmKatakuri", 3, "[Farming] Farm Katakuri")
+RunLoop("FarmChest", 2, "[Farming] Farm Chests")
+RunLoop("AutoCollectFruit", 3, "[Farming] Collect Fruit")
+RunLoop("AutoFish", 4, "[Fishing] Auto Fishing")
+RunLoop("AutoQuest", 5, "[Fishing] Accept Quest")
+RunLoop("AutoBossS1", 3, "[Boss] Farm Boss Sea 1")
+RunLoop("AutoMaterial", 3, "[Material] Farm Material")
+RunLoop("AutoRaid", 5, "[Raid] Auto Raid")
+RunLoop("AutoDungeon", 4, "[Dungeon] Auto Dungeon")
+RunLoop("AutoSeaBeast", 4, "[Sea Event] Sea Beast")
+RunLoop("AutoLeviathan", 6, "[Sea Event] Leviathan")
+RunLoop("DragonV1", 5, "[Dragon] Up V1")
+RunLoop("DragonV2", 5, "[Dragon] Up V2")
+RunLoop("DragonV3", 5, "[Dragon] Up V3")
+RunLoop("DragonV4", 5, "[Dragon] Up V4")
+RunLoop("AutoDriveBoat", 3, "[Sea Event] Auto Lái Thuyền")
+
+print("[HTD] Tất cả RunLoop đã khởi tạo!")
+-- ============================================================
+--  LOAD ALL: Tải toàn bộ script
+-- ============================================================
+
+-- Load Core trước
+local Core = require(script["00_Core"])
+
+-- Load các tab
+require(script["01_Farming"])
+require(script["02_Fishing"])
+require(script["03_Item"])
+require(script["04_SeaEvent"])
+require(script["05_Volcano"])
+require(script["06_Dragon"])
+require(script["07_RaidDungeon"])
+require(script["08_Shop"])
+require(script["09_ESP"])
+require(script["10_PvP"])
+require(script["11_Settings"])
+
+-- Load RunLoop
+require(script["12_RunLoop"])
+
+-- Khởi tạo SaveManager
+local SaveManager = Core.SaveManager
+local InterfaceManager = Core.InterfaceManager
+local Tabs = Core.Tabs
+
+SaveManager:SetLibrary(Core.Fluent)
+InterfaceManager:SetLibrary(Core.Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("HTDRoblox")
+SaveManager:SetFolder("HTDRoblox/BloxFruit")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+
+Core.Window:SelectTab(1)
+Core.Fluent:Notify({
+    Title = "HTD.roblox",
+    Content = "Tất cả các tab đã được tải!",
+    Duration = 4
+})
+SaveManager:LoadAutoloadConfig()
+
+print("[HTD] LoadAll hoàn tất!")
