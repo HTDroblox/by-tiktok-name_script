@@ -1,0 +1,153 @@
+-- ========== CÀI ĐẶT ==========
+local TARGET_PART = "Head"   -- hoặc "HumanoidRootPart"
+local RADIUS = 50            -- bán kính tìm mục tiêu
+local LOCK_KEY = "L"         -- phím tắt bật/tắt (có thể dùng thêm)
+
+-- ========== KHỞI TẠO ==========
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Root = Character:WaitForChild("HumanoidRootPart")
+
+local AimLock = false
+local LockedTarget = nil      -- mục tiêu đã bị khóa (chế độ cố định)
+local CurrentTarget = nil     -- mục tiêu đang aim (có thể thay đổi nếu chưa khóa)
+
+-- ========== TẠO GUI ==========
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = LocalPlayer.PlayerGui
+
+-- Nút chính (bật/tắt aimlock) - hình ổ khóa
+local MainButton = Instance.new("ImageButton")
+MainButton.Size = UDim2.new(0, 70, 0, 70)
+MainButton.Position = UDim2.new(0.85, 0, 0.6, 0)  -- có thể kéo sang chỗ khác
+MainButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainButton.BorderSizePixel = 0
+MainButton.Image = "rbxassetid://16959368327"  -- mã ổ khóa (hoặc thay bằng icon bạn thích)
+MainButton.Parent = ScreenGui
+
+-- Nút cố định (nhỏ hơn, nằm cạnh)
+local LockButton = Instance.new("ImageButton")
+LockButton.Size = UDim2.new(0, 40, 0, 40)
+LockButton.Position = UDim2.new(0.85, 80, 0.6, 0)  -- bên cạnh
+LockButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+LockButton.BorderSizePixel = 0
+LockButton.Image = "rbxassetid://6031091055"  -- biểu tượng khóa chặt
+LockButton.Parent = ScreenGui
+LockButton.Visible = false   -- ẩn cho đến khi aimlock bật
+
+-- Thêm text báo trạng thái (tùy chọn)
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(0, 100, 0, 30)
+StatusLabel.Position = UDim2.new(0.85, -15, 0.6, -80)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextColor3 = Color3.new(1,1,1)
+StatusLabel.TextScaled = true
+StatusLabel.Text = " OFF"
+StatusLabel.Parent = ScreenGui
+
+-- ========== HÀM TÌM MỤC TIÊU ==========
+local function GetClosestPlayer()
+    local closest, minDist = nil, RADIUS
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                local part = char:FindFirstChild("HumanoidRootPart")
+                if part then
+                    local dist = (Root.Position - part.Position).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        closest = player
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ========== HÀM AIM ==========
+local function AimAt(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local char = targetPlayer.Character
+    local targetPart = char:FindFirstChild(TARGET_PART) or char:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return end
+
+    local targetPos = targetPart.Position + Vector3.new(0, 1.5, 0)
+    local camPos = Camera.CFrame.Position
+    local direction = (targetPos - camPos).unit
+    Camera.CFrame = CFrame.lookAt(camPos, camPos + direction)
+end
+
+-- ========== XỬ LÝ KHI BẬM NÚT ==========
+-- Bật/tắt aimlock
+MainButton.MouseButton1Click:Connect(function()
+    AimLock = not AimLock
+    if AimLock then
+        -- Bật: tìm mục tiêu ban đầu
+        LockedTarget = nil  -- reset chế độ cố định
+        CurrentTarget = GetClosestPlayer()
+        LockButton.Visible = true
+        StatusLabel.Text = " ON"
+        MainButton.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+    else
+        LockedTarget = nil
+        CurrentTarget = nil
+        LockButton.Visible = false
+        StatusLabel.Text = " OFF"
+        MainButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+end)
+
+-- Nút cố định: khóa mục tiêu hiện tại
+LockButton.MouseButton1Click:Connect(function()
+    if not AimLock then return end
+    if LockedTarget then
+        -- Nếu đã khóa, nhấn lần nữa để bỏ khóa
+        LockedTarget = nil
+        LockButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        StatusLabel.Text = " ON (thả)"
+    else
+        -- Khóa mục tiêu hiện tại
+        LockedTarget = CurrentTarget or GetClosestPlayer()
+        if LockedTarget then
+            LockButton.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+            StatusLabel.Text = " LOCKED"
+        else
+            StatusLabel.Text = " no target"
+        end
+    end
+end)
+
+-- Phím tắt L (bật/tắt)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.L then
+        MainButton.MouseButton1Click:Fire()  -- kích hoạt sự kiện click của nút
+    end
+end)
+
+-- ========== VÒNG LẶP AIM ==========
+RunService.RenderStepped:Connect(function()
+    if not AimLock then return end
+
+    -- Nếu có mục tiêu bị khóa, ưu tiên dùng nó
+    if LockedTarget and LockedTarget.Character and LockedTarget.Character:FindFirstChild("HumanoidRootPart") then
+        AimAt(LockedTarget)
+        return
+    end
+
+    -- Nếu không khóa, tìm mục tiêu gần nhất mỗi frame
+    CurrentTarget = GetClosestPlayer()
+    if CurrentTarget then
+        AimAt(CurrentTarget)
+    end
+end)
+
+-- ========== TIN NHẮN HƯỚNG DẪN ==========
+print(" Aimlock đã tải! Nhấn nút ổ khóa hoặc phím L để bật/tắt.")
+print(" Nhấn nút khóa nhỏ để cố định mục tiêu (khóa chặt), nhấn lại để thả.")
